@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 
 """
 Common data processing utilities that are used in a
@@ -9,7 +9,6 @@ import logging
 import numpy as np
 import pycocotools.mask as mask_util
 import torch
-from fvcore.common.file_io import PathManager
 from PIL import Image
 
 from detectron2.structures import (
@@ -22,6 +21,7 @@ from detectron2.structures import (
     RotatedBoxes,
     polygons_to_bitmask,
 )
+from detectron2.utils.file_io import PathManager
 
 from . import transforms as T
 from .catalog import MetadataCatalog
@@ -192,13 +192,14 @@ def check_image_size(dataset_dict, image):
         expected_wh = (dataset_dict["width"], dataset_dict["height"])
         if not image_wh == expected_wh:
             raise SizeMismatchError(
-                "Mismatched (W,H){}, got {}, expect {}".format(
+                "Mismatched image shape{}, got {}, expect {}.".format(
                     " for image " + dataset_dict["file_name"]
                     if "file_name" in dataset_dict
                     else "",
                     image_wh,
                     expected_wh,
                 )
+                + " Please check the width/height in your annotation."
             )
 
     # To ensure bbox always remap to original image size
@@ -384,8 +385,12 @@ def annotations_to_instances(annos, image_size, mask_format="polygon"):
     if len(annos) and "segmentation" in annos[0]:
         segms = [obj["segmentation"] for obj in annos]
         if mask_format == "polygon":
-            # TODO check type and provide better error
-            masks = PolygonMasks(segms)
+            try:
+                masks = PolygonMasks(segms)
+            except ValueError as e:
+                raise ValueError(
+                    "Failed to use mask_format=='polygon' from the given annotations!"
+                ) from e
         else:
             assert mask_format == "bitmask", mask_format
             masks = []
@@ -406,8 +411,8 @@ def annotations_to_instances(annos, image_size, mask_format="polygon"):
                     raise ValueError(
                         "Cannot convert segmentation of type '{}' to BitMasks!"
                         "Supported types are: polygons as list[list[float] or ndarray],"
-                        " COCO-style RLE as a dict, or a full-image segmentation mask "
-                        "as a 2D ndarray.".format(type(segm))
+                        " COCO-style RLE as a dict, or a binary segmentation mask "
+                        " in a 2D numpy array of shape HxW.".format(type(segm))
                     )
             # torch.from_numpy does not support array with negative stride.
             masks = BitMasks(

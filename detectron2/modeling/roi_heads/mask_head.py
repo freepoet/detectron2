@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 from typing import List
 import fvcore.nn.weight_init as weight_init
 import torch
@@ -188,7 +188,6 @@ class BaseMaskRCNNHead(nn.Module):
         """
         x = self.layers(x)
         if self.training:
-            assert not torch.jit.is_scripting()
             return {"loss_mask": mask_rcnn_loss(x, instances, self.vis_period)}
         else:
             mask_rcnn_inference(x, instances)
@@ -218,7 +217,8 @@ class MaskRCNNConvUpsampleHead(BaseMaskRCNNHead, nn.Sequential):
 
         Args:
             input_shape (ShapeSpec): shape of the input feature
-            num_classes (int): the number of classes. 1 if using class agnostic prediction.
+            num_classes (int): the number of foreground classes (i.e. background is not
+                included). 1 if using class agnostic prediction.
             conv_dims (list[int]): a list of N>0 integers representing the output dimensions
                 of N-1 conv layers and the last upsample layer.
             conv_norm (str or callable): normalization for the conv layers.

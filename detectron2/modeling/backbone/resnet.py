@@ -1,5 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-import logging
+# Copyright (c) Facebook, Inc. and its affiliates.
 import numpy as np
 import fvcore.nn.weight_init as weight_init
 import torch
@@ -364,7 +363,7 @@ class ResNet(Backbone):
     Implement :paper:`ResNet`.
     """
 
-    def __init__(self, stem, stages, num_classes=None, out_features=None):
+    def __init__(self, stem, stages, num_classes=None, out_features=None, freeze_at=0):
         """
         Args:
             stem (nn.Module): a stem module
@@ -375,6 +374,8 @@ class ResNet(Backbone):
             out_features (list[str]): name of the layers whose outputs should
                 be returned in forward. Can be anything in "stem", "linear", or "res2" ...
                 If None, will return the output of the last layer.
+            freeze_at (int): The number of stages at the beginning to freeze.
+                see :meth:`freeze` for detailed explanation.
         """
         super().__init__()
         self.stem = stem
@@ -384,7 +385,7 @@ class ResNet(Backbone):
         self._out_feature_strides = {"stem": current_stride}
         self._out_feature_channels = {"stem": self.stem.out_channels}
 
-        self.stages_and_names = []
+        self.stage_names, self.stages = [], []
         for i, blocks in enumerate(stages):
             assert len(blocks) > 0, len(blocks)
             for block in blocks:
@@ -394,12 +395,14 @@ class ResNet(Backbone):
             stage = nn.Sequential(*blocks)
 
             self.add_module(name, stage)
-            self.stages_and_names.append((stage, name))
+            self.stage_names.append(name)
+            self.stages.append(stage)
 
             self._out_feature_strides[name] = current_stride = int(
                 current_stride * np.prod([k.stride for k in blocks])
             )
             self._out_feature_channels[name] = curr_channels = blocks[-1].out_channels
+        self.stage_names = tuple(self.stage_names)  # Make it static for scripting
 
         if num_classes is not None:
             self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
@@ -418,6 +421,7 @@ class ResNet(Backbone):
         children = [x[0] for x in self.named_children()]
         for out_feature in self._out_features:
             assert out_feature in children, "Available children: {}".format(", ".join(children))
+        self.freeze(freeze_at)
 
     def forward(self, x):
         """
@@ -432,7 +436,7 @@ class ResNet(Backbone):
         x = self.stem(x)
         if "stem" in self._out_features:
             outputs["stem"] = x
-        for stage, name in self.stages_and_names:
+        for name, stage in zip(self.stage_names, self.stages):
             x = stage(x)
             if name in self._out_features:
                 outputs[name] = x
@@ -470,16 +474,14 @@ class ResNet(Backbone):
         """
         if freeze_at >= 1:
             self.stem.freeze()
-        for idx, (stage, _) in enumerate(self.stages_and_names, start=2):
+        for idx, stage in enumerate(self.stages, start=2):
             if freeze_at >= idx:
                 for block in stage.children():
                     block.freeze()
         return self
 
     @staticmethod
-    def make_stage(
-        block_class, num_blocks, first_stride=None, *, in_channels, out_channels, **kwargs
-    ):
+    def make_stage(block_class, num_blocks, *, in_channels, out_channels, **kwargs):
         """
         Create a list of blocks of the same type that forms one ResNet stage.
 
@@ -488,7 +490,6 @@ class ResNet(Backbone):
                 stage. A module of this type must not change spatial resolution of inputs unless its
                 stride != 1.
             num_blocks (int): number of blocks in this stage
-            first_stride (int): deprecated
             in_channels (int): input channels of the entire stage.
             out_channels (int): output channels of **every block** in the stage.
             kwargs: other arguments passed to the constructor of
@@ -502,7 +503,7 @@ class ResNet(Backbone):
 
         Examples:
         ::
-            stages = ResNet.make_stage(
+            stage = ResNet.make_stage(
                 BottleneckBlock, 3, in_channels=16, out_channels=64,
                 bottleneck_channels=16, num_groups=1,
                 stride_per_block=[2, 1, 1],
@@ -513,15 +514,6 @@ class ResNet(Backbone):
         "stage" (in :paper:`FPN`). Under such definition, ``stride_per_block[1:]`` should
         all be 1.
         """
-        if first_stride is not None:
-            assert "stride" not in kwargs and "stride_per_block" not in kwargs
-            kwargs["stride_per_block"] = [first_stride] + [1] * (num_blocks - 1)
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                "ResNet.make_stage(first_stride=) is deprecated!  "
-                "Use 'stride_per_block' or 'stride' instead."
-            )
-
         blocks = []
         for i in range(num_blocks):
             curr_kwargs = {}
@@ -615,6 +607,7 @@ def build_resnet_backbone(cfg, input_shape):
     ]
     max_stage_idx = max(out_stage_idx)
     for idx, stage_idx in enumerate(range(2, max_stage_idx + 1)):
+        # res5_dilation is used this way as a convention in R-FCN & Deformable Conv paper
         dilation = res5_dilation if stage_idx == 5 else 1
         first_stride = 1 if idx == 0 or (stage_idx == 5 and dilation == 2) else 2
         stage_kargs = {
@@ -643,4 +636,4 @@ def build_resnet_backbone(cfg, input_shape):
         out_channels *= 2
         bottleneck_channels *= 2
         stages.append(blocks)
-    return ResNet(stem, stages, out_features=out_features).freeze(freeze_at)
+    return ResNet(stem, stages, out_features=out_features, freeze_at=freeze_at)

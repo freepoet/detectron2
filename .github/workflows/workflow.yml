@@ -34,11 +34,10 @@ jobs:
     # run on PRs, or commits to facebookresearch (not internal)
     if: ${{ github.repository_owner == 'facebookresearch' || github.event_name == 'pull_request' }}
     strategy:
+      fail-fast: false
       matrix:
-        torch: [1.5, 1.6, 1.7]
+        torch: [1.6, 1.7]
         include:
-          - torch: 1.5
-            torchvision: 0.6
           - torch: 1.6
             torchvision: 0.7
           - torch: 1.7
