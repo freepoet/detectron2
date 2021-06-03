@@ -10,6 +10,7 @@ fvcore.nn
 
 .. automodule:: fvcore.nn
     :members:
+    :inherited-members:
     :undoc-members:
     :show-inheritance:
 
@@ -33,6 +34,7 @@ fvcore.common
 
 .. automodule:: fvcore.common.param_scheduler
     :members:
+    :inherited-members:
     :undoc-members:
     :show-inheritance:
 

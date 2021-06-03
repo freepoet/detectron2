@@ -236,14 +236,17 @@ def _create_text_labels(classes, scores, class_names, is_crowd=None):
         list[str] or None
     """
     labels = None
-    if classes is not None and class_names is not None and len(class_names) > 0:
-        labels = [class_names[i] for i in classes]
+    if classes is not None:
+        if class_names is not None and len(class_names) > 0:
+            labels = [class_names[i] for i in classes]
+        else:
+            labels = [str(i) for i in classes]
     if scores is not None:
         if labels is None:
             labels = ["{:.0f}%".format(s * 100) for s in scores]
         else:
             labels = ["{} {:.0f}%".format(l, s * 100) for l, s in zip(labels, scores)]
-    if is_crowd is not None:
+    if labels is not None and is_crowd is not None:
         labels = [l + ("|crowd" if crowd else "") for l, crowd in zip(labels, is_crowd)]
     return labels
 
@@ -350,7 +353,7 @@ class Visualizer:
                 color channels. The image is required to be in RGB format since that
                 is a requirement of the Matplotlib library. The image is also expected
                 to be in the range [0, 255].
-            metadata (Metadata): image metadata.
+            metadata (Metadata): dataset metadata (e.g. class names and colors)
             instance_mode (ColorMode): defines one of the pre-defined style for drawing
                 instances on an image.
         """
@@ -381,7 +384,7 @@ class Visualizer:
         """
         boxes = predictions.pred_boxes if predictions.has("pred_boxes") else None
         scores = predictions.scores if predictions.has("scores") else None
-        classes = predictions.pred_classes if predictions.has("pred_classes") else None
+        classes = predictions.pred_classes.tolist() if predictions.has("pred_classes") else None
         labels = _create_text_labels(classes, scores, self.metadata.get("thing_classes", None))
         keypoints = predictions.pred_keypoints if predictions.has("pred_keypoints") else None
 
@@ -585,7 +588,7 @@ class Visualizer:
                 pan_seg = rgb2id(pan_seg)
         if pan_seg is not None:
             segments_info = dic["segments_info"]
-            pan_seg = torch.Tensor(pan_seg)
+            pan_seg = torch.tensor(pan_seg)
             self.draw_panoptic_seg(pan_seg, segments_info, area_threshold=0, alpha=0.5)
         return self.output
 
@@ -628,7 +631,7 @@ class Visualizer:
         Returns:
             output (VisImage): image object with visualizations.
         """
-        num_instances = None
+        num_instances = 0
         if boxes is not None:
             boxes = self._convert_boxes(boxes)
             num_instances = len(boxes)

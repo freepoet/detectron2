@@ -9,31 +9,39 @@ from detectron2.data.datasets.lvis import get_lvis_instances_meta
 from detectron2.structures import BoxMode
 from detectron2.utils.file_io import PathManager
 
-from densepose.data.meshes.catalog import MeshCatalog
-
 from ..utils import maybe_prepend_base_path
-from .coco import DENSEPOSE_KEYS, DENSEPOSE_METADATA_URL_PREFIX, CocoDatasetInfo, get_metadata
+from .coco import (
+    DENSEPOSE_ALL_POSSIBLE_KEYS,
+    DENSEPOSE_METADATA_URL_PREFIX,
+    CocoDatasetInfo,
+    get_metadata,
+)
 
 DATASETS = [
     CocoDatasetInfo(
-        name="densepose_lvis_v1_train1",
+        name="densepose_lvis_v1_ds1_train_v1",
         images_root="coco_",
-        annotations_fpath="lvis/densepose_lvis_v1_train1.json",
+        annotations_fpath="lvis/densepose_lvis_v1_ds1_train_v1.json",
     ),
     CocoDatasetInfo(
-        name="densepose_lvis_v1_train2",
+        name="densepose_lvis_v1_ds1_val_v1",
         images_root="coco_",
-        annotations_fpath="lvis/densepose_lvis_v1_train2.json",
+        annotations_fpath="lvis/densepose_lvis_v1_ds1_val_v1.json",
     ),
     CocoDatasetInfo(
-        name="densepose_lvis_v1_val",
+        name="densepose_lvis_v1_ds2_train_v1",
         images_root="coco_",
-        annotations_fpath="lvis/densepose_lvis_v1_val.json",
+        annotations_fpath="lvis/densepose_lvis_v1_ds2_train_v1.json",
     ),
     CocoDatasetInfo(
-        name="densepose_lvis_v1_val_animals_100",
+        name="densepose_lvis_v1_ds2_val_v1",
         images_root="coco_",
-        annotations_fpath="lvis/densepose_lvis_v1_val_animals_100.json",
+        annotations_fpath="lvis/densepose_lvis_v1_ds2_val_v1.json",
+    ),
+    CocoDatasetInfo(
+        name="densepose_lvis_v1_ds1_val_animals_100",
+        images_root="coco_",
+        annotations_fpath="lvis/densepose_lvis_v1_val_animals_100_v2.json",
     ),
 ]
 
@@ -110,16 +118,9 @@ def _maybe_add_keypoints(obj: Dict[str, Any], ann_dict: Dict[str, Any]):
 
 
 def _maybe_add_densepose(obj: Dict[str, Any], ann_dict: Dict[str, Any]):
-    for key in DENSEPOSE_KEYS:
+    for key in DENSEPOSE_ALL_POSSIBLE_KEYS:
         if key in ann_dict:
             obj[key] = ann_dict[key]
-
-
-def _maybe_add_cse_data(obj: Dict[str, Any], ann_dict: Dict[str, Any]):
-    if "dp_vertex" in ann_dict:
-        obj["vertex_ids"] = ann_dict["dp_vertex"]
-    if "ref_model" in ann_dict:
-        obj["mesh_id"] = MeshCatalog.get_mesh_id(ann_dict["ref_model"])
 
 
 def _combine_images_with_annotations(
@@ -158,7 +159,6 @@ def _combine_images_with_annotations(
             _maybe_add_segm(obj, ann_dict)
             _maybe_add_keypoints(obj, ann_dict)
             _maybe_add_densepose(obj, ann_dict)
-            _maybe_add_cse_data(obj, ann_dict)
             objs.append(obj)
         record["annotations"] = objs
         dataset_dicts.append(record)
@@ -212,14 +212,14 @@ def load_lvis_json(annotations_json_file: str, image_root: str, dataset_name: st
     return dataset_records
 
 
-def register_dataset(dataset_data: CocoDatasetInfo, datasets_root: Optional[os.PathLike] = None):
+def register_dataset(dataset_data: CocoDatasetInfo, datasets_root: Optional[str] = None):
     """
     Registers provided LVIS DensePose dataset
 
     Args:
         dataset_data: CocoDatasetInfo
             Dataset data
-        datasets_root: Optional[os.PathLike]
+        datasets_root: Optional[str]
             Datasets root folder (default: None)
     """
     annotations_fpath = maybe_prepend_base_path(datasets_root, dataset_data.annotations_fpath)
@@ -242,7 +242,7 @@ def register_dataset(dataset_data: CocoDatasetInfo, datasets_root: Optional[os.P
 
 
 def register_datasets(
-    datasets_data: Iterable[CocoDatasetInfo], datasets_root: Optional[os.PathLike] = None
+    datasets_data: Iterable[CocoDatasetInfo], datasets_root: Optional[str] = None
 ):
     """
     Registers provided LVIS DensePose datasets
@@ -250,7 +250,7 @@ def register_datasets(
     Args:
         datasets_data: Iterable[CocoDatasetInfo]
             An iterable of dataset datas
-        datasets_root: Optional[os.PathLike]
+        datasets_root: Optional[str]
             Datasets root folder (default: None)
     """
     for dataset_data in datasets_data:

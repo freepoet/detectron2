@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import typing
+import fvcore
 from fvcore.nn import activation_count, flop_count, parameter_count, parameter_count_table
 from torch import nn
 
@@ -18,10 +19,12 @@ FLOPS_MODE = "flops"
 ACTIVATIONS_MODE = "activations"
 
 
-# some extra ops to ignore from counting.
+# Some extra ops to ignore from counting, including elementwise and reduction ops
 _IGNORED_OPS = {
     "aten::add",
     "aten::add_",
+    "aten::argmax",
+    "aten::argsort",
     "aten::batch_norm",
     "aten::constant_pad_nd",
     "aten::div",
@@ -32,7 +35,9 @@ _IGNORED_OPS = {
     "aten::meshgrid",
     "aten::mul",
     "aten::mul_",
+    "aten::neg",
     "aten::nonzero_numpy",
+    "aten::reciprocal",
     "aten::rsub",
     "aten::sigmoid",
     "aten::sigmoid_",
@@ -40,19 +45,32 @@ _IGNORED_OPS = {
     "aten::sort",
     "aten::sqrt",
     "aten::sub",
-    "aten::upsample_nearest2d",
-    "prim::PythonOp",
     "torchvision::nms",  # TODO estimate flop for nms
 }
 
 
-def flop_count_operators(
-    model: nn.Module, inputs: list, **kwargs
-) -> typing.DefaultDict[str, float]:
+class FlopCountAnalysis(fvcore.nn.FlopCountAnalysis):
+    """
+    Same as :class:`fvcore.nn.FlopCountAnalysis`, but supports detectron2 models.
+    """
+
+    def __init__(self, model, inputs):
+        """
+        Args:
+            model (nn.Module):
+            inputs (Any): inputs of the given model. Does not have to be tuple of tensors.
+        """
+        wrapper = TracingAdapter(model, inputs, allow_non_tensor=True)
+        super().__init__(wrapper, wrapper.flattened_inputs)
+        self.set_op_handle(**{k: None for k in _IGNORED_OPS})
+
+
+def flop_count_operators(model: nn.Module, inputs: list) -> typing.DefaultDict[str, float]:
     """
     Implement operator-level flops counting using jit.
     This is a wrapper of :func:`fvcore.nn.flop_count` and adds supports for standard
     detection models in detectron2.
+    Please use :class:`FlopCountAnalysis` for more advanced functionalities.
 
     Note:
         The function runs the input through the model to compute flops.
@@ -67,8 +85,16 @@ def flop_count_operators(
         model: a detectron2 model that takes `list[dict]` as input.
         inputs (list[dict]): inputs to model, in detectron2's standard format.
             Only "image" key will be used.
+        supported_ops (dict[str, Handle]): see documentation of :func:`fvcore.nn.flop_count`
+
+    Returns:
+        Counter: Gflop count per operator
     """
-    return _wrapper_count_operators(model=model, inputs=inputs, mode=FLOPS_MODE, **kwargs)
+    old_train = model.training
+    model.eval()
+    ret = FlopCountAnalysis(model, inputs).by_operator()
+    model.train(old_train)
+    return {k: v / 1e9 for k, v in ret.items()}
 
 
 def activation_count_operators(
@@ -89,6 +115,9 @@ def activation_count_operators(
         model: a detectron2 model that takes `list[dict]` as input.
         inputs (list[dict]): inputs to model, in detectron2's standard format.
             Only "image" key will be used.
+
+    Returns:
+        Counter: activation count per operator
     """
     return _wrapper_count_operators(model=model, inputs=inputs, mode=ACTIVATIONS_MODE, **kwargs)
 

@@ -148,7 +148,7 @@ class BilinearInterpolationHelper:
             y_hi,
             x_lo,
             x_hi,
-            w_ylo_xlo,
+            w_ylo_xlo,  # pyre-ignore[6]
             w_ylo_xhi,
             w_yhi_xlo,
             w_yhi_xhi,
@@ -291,7 +291,7 @@ class PackedChartBasedAnnotations:
     y_gt: torch.Tensor
     u_gt: torch.Tensor
     v_gt: torch.Tensor
-    coarse_segm_gt: torch.Tensor
+    coarse_segm_gt: Optional[torch.Tensor]
     bbox_xywh_gt: torch.Tensor
     bbox_xywh_est: torch.Tensor
     point_bbox_with_dp_indices: torch.Tensor
@@ -351,7 +351,7 @@ class ChartBasedAnnotationsAccumulator(AnnotationsAccumulator):
             boxes_xywh_est, boxes_xywh_gt, instances_one_image.gt_densepose
         ):
             if (dp_gt is not None) and (len(dp_gt.x) > 0):
-                self._do_accumulate(box_xywh_gt, box_xywh_est, dp_gt)
+                self._do_accumulate(box_xywh_gt, box_xywh_est, dp_gt)  # pyre-ignore[6]
             self.nxt_bbox_index += 1
 
     def _do_accumulate(
@@ -370,7 +370,8 @@ class ChartBasedAnnotationsAccumulator(AnnotationsAccumulator):
         self.y_gt.append(dp_gt.y)
         self.u_gt.append(dp_gt.u)
         self.v_gt.append(dp_gt.v)
-        self.s_gt.append(dp_gt.segm.unsqueeze(0))
+        if hasattr(dp_gt, "segm"):
+            self.s_gt.append(dp_gt.segm.unsqueeze(0))
         self.bbox_xywh_gt.append(box_xywh_gt.view(-1, 4))
         self.bbox_xywh_est.append(box_xywh_est.view(-1, 4))
         self.point_bbox_with_dp_indices.append(
@@ -397,7 +398,10 @@ class ChartBasedAnnotationsAccumulator(AnnotationsAccumulator):
             y_gt=torch.cat(self.y_gt, 0),
             u_gt=torch.cat(self.u_gt, 0),
             v_gt=torch.cat(self.v_gt, 0),
-            coarse_segm_gt=torch.cat(self.s_gt, 0),
+            # ignore segmentation annotations, if not all the instances contain those
+            coarse_segm_gt=torch.cat(self.s_gt, 0)
+            if len(self.s_gt) == len(self.bbox_xywh_gt)
+            else None,
             bbox_xywh_gt=torch.cat(self.bbox_xywh_gt, 0),
             bbox_xywh_est=torch.cat(self.bbox_xywh_est, 0),
             point_bbox_with_dp_indices=torch.cat(self.point_bbox_with_dp_indices, 0).long(),
@@ -414,3 +418,23 @@ def extract_packed_annotations_from_matches(
     for proposals_targets_per_image in proposals_with_targets:
         accumulator.accumulate(proposals_targets_per_image)
     return accumulator.pack()
+
+
+def sample_random_indices(
+    n_indices: int, n_samples: int, device: Optional[torch.device] = None
+) -> Optional[torch.Tensor]:
+    """
+    Samples `n_samples` random indices from range `[0..n_indices - 1]`.
+    If `n_indices` is smaller than `n_samples`, returns `None` meaning that all indices
+    are selected.
+    Args:
+        n_indices (int): total number of indices
+        n_samples (int): number of indices to sample
+        device (torch.device): the desired device of returned tensor
+    Return:
+        Tensor of selected vertex indices, or `None`, if all vertices are selected
+    """
+    if (n_samples <= 0) or (n_indices <= n_samples):
+        return None
+    indices = torch.randperm(n_indices, device=device)[:n_samples]
+    return indices
